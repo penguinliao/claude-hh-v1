@@ -13,6 +13,7 @@ from claude_hh import delivery
 def test_memory_initialization_is_idempotent() -> None:
     with tempfile.TemporaryDirectory(prefix="loopharness_memory_") as temp_dir:
         root = Path(temp_dir)
+        (root / ".agent-memory").mkdir()  # project-local store wins over global
         first = delivery.init_memory(root)
         profile = root / ".agent-memory" / "profile.md"
         profile.write_text("用户明确偏好", encoding="utf-8")
@@ -23,6 +24,23 @@ def test_memory_initialization_is_idempotent() -> None:
             raise AssertionError(f"重复初始化不应覆盖或重建文件: {second}")
         if profile.read_text(encoding="utf-8") != "用户明确偏好":
             raise AssertionError("重复初始化覆盖了已有记忆")
+
+
+def test_memory_dir_prefers_project_then_global(tmp_path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    # No project-local store -> fall back to the (sandboxed) global store.
+    if delivery._memory_dir(project) != delivery.GLOBAL_MEMORY_DIR:
+        raise AssertionError("无项目记忆时必须回退到全局记忆库")
+    # Project-local store wins once it exists.
+    (project / ".agent-memory").mkdir()
+    if delivery._memory_dir(project) != project / ".agent-memory":
+        raise AssertionError("项目内 .agent-memory 必须优先于全局")
+    # Nested directories walk upward to the project store.
+    nested = project / "a" / "b"
+    nested.mkdir(parents=True)
+    if delivery._memory_dir(nested) != project / ".agent-memory":
+        raise AssertionError("深层子目录必须向上找到项目记忆库")
 
 
 def test_context_reads_only_contract_grants() -> None:

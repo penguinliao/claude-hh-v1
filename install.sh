@@ -64,7 +64,57 @@ for shell_rc in "${HOME}/.zshrc" "${HOME}/.bashrc"; do
   fi
 done
 
+# --- Cross-agent global memory (~/.agent-memory) ---
+# One-time, idempotent: point every known agent's user-level config at the
+# global memory store so any agent in any project reads/sediments it.
+MEMORY_MARKER_BEGIN="<!-- loopharness:global-memory v1 -->"
+
+add_global_memory_pointer() {
+  local cfg="$1"
+  if [[ -f "${cfg}" ]] && grep -Fq "${MEMORY_MARKER_BEGIN}" "${cfg}" 2>/dev/null; then
+    echo "  (global memory pointer already in ${cfg}, skipping)"
+    return
+  fi
+  cat >> "${cfg}" << 'POINTER_EOF'
+
+<!-- loopharness:global-memory v1 -->
+
+# Cross-agent global memory (LoopHarness .agent-memory)
+
+- **Before starting work in any project**: read `~/.agent-memory/README.md`
+  and follow its read order (profile → projects → decisions/learned → inbox).
+  If the project contains its own `.agent-memory/`, the project copy wins.
+- **Before ending a work session** (meaningful feature / pitfall / decision):
+  1. Append progress and next steps to `~/.agent-memory/projects/<project>.md`
+  2. Append durable lessons to `~/.agent-memory/decisions/learned.md`
+     (or run `harness learn "..."`)
+  3. Park undecided items in `~/.agent-memory/inbox.md`
+- **Never** write secrets, tokens, or real user data into the memory store.
+
+<!-- /loopharness:global-memory -->
+POINTER_EOF
+  echo "  Added global memory pointer to ${cfg}"
+}
+
+# Known agent user-level configs. Agents that auto-read project AGENTS.md
+# (Codex, Qoder, Trae, ...) are also covered per-project by `harness init`,
+# which writes the same protocol into AGENTS.md.
+if [[ -d "${HOME}/.claude" ]]; then
+  add_global_memory_pointer "${HOME}/.claude/CLAUDE.md"
+fi
+if [[ -d "${HOME}/.codex" ]]; then
+  add_global_memory_pointer "${HOME}/.codex/AGENTS.md"
+fi
+
+# Initialize the global memory store (idempotent, never overwrites content).
+if (cd "${HOME}" && "${BIN_DIR}/harness" memory-init >/dev/null 2>&1); then
+  echo "  Global memory store ready at ${HOME}/.agent-memory"
+else
+  echo "  (global memory init skipped; run 'harness memory-init' later)"
+fi
+
 echo ""
 echo "LoopHarness v1.4 installed."
 echo "Executable: ${BIN_DIR}/harness"
+echo "Global memory: ${HOME}/.agent-memory (agents auto-read after this install)"
 echo "Run: harness -h"

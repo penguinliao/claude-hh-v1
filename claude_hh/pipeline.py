@@ -54,6 +54,19 @@ v1.0.x rules below instead:
 - There is **no `--project=` flag** — `harness` resolves the project from
   the current working directory.
 
+## Cross-agent memory (read on start, sediment on end)
+
+- **Session start**: read the cross-agent memory before answering the user.
+  Project-local `.agent-memory/README.md` wins when it exists; otherwise read
+  the global `~/.agent-memory/README.md` and follow its read order
+  (profile → projects → decisions/learned → inbox).
+- **Session end** (after completing meaningful work, pitfalls, or decisions):
+  sediment back — append progress and next steps to
+  `.agent-memory/projects/<project>.md`, record durable lessons with
+  `harness learn "..."` (or append to `decisions/learned.md`), and park
+  undecided items in `inbox.md`. Never write secrets, tokens, or real user
+  data into the memory store.
+
 ## Auto-start protocol
 
 Follow this on every session start, **before responding to the user**:
@@ -103,33 +116,37 @@ P0 ACs in spec.md.
 """
 
 def _ensure_claude_md(root: Path) -> None:
-    """Idempotent: write H-H auto-start guide to <root>/CLAUDE.md.
+    """Idempotent: write H-H auto-start guide to <root>/CLAUDE.md and AGENTS.md.
 
-    Behavior:
+    AGENTS.md is the cross-agent convention (Codex, Qoder, Trae, and other
+    agents auto-read it), so the guide must land in both entry files.
+
+    Behavior (per file):
     - File missing -> create with current guide
     - File exists, contains current version marker -> no change
     - File exists, contains older version marker -> replace marked block
     - File exists, no marker -> append guide
     """
-    md = root / "CLAUDE.md"
     current_marker = "<!-- claude-hh:auto-start-guide v1.0.6 -->"
-    if not md.exists():
-        md.write_text(CLAUDE_MD_GUIDE)
-        return
-    existing = md.read_text()
-    if current_marker in existing:
-        return  # current version already installed
-    # Replace any older marked block (v1.0.4, v1.0.5, ...)
     older_block_re = re.compile(
         r"<!-- claude-hh:auto-start-guide[^>]*-->.*?<!-- /claude-hh:auto-start-guide -->",
         re.DOTALL,
     )
-    if older_block_re.search(existing):
-        replaced = older_block_re.sub(CLAUDE_MD_GUIDE.strip(), existing)
-        md.write_text(replaced)
-        return
-    # No marker -> append
-    md.write_text(existing.rstrip() + chr(10) + chr(10) + CLAUDE_MD_GUIDE)
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        md = root / name
+        if not md.exists():
+            md.write_text(CLAUDE_MD_GUIDE)
+            continue
+        existing = md.read_text()
+        if current_marker in existing:
+            continue  # current version already installed
+        # Replace any older marked block (v1.0.4, v1.0.5, ...)
+        if older_block_re.search(existing):
+            replaced = older_block_re.sub(CLAUDE_MD_GUIDE.strip(), existing)
+            md.write_text(replaced)
+            continue
+        # No marker -> append
+        md.write_text(existing.rstrip() + chr(10) + chr(10) + CLAUDE_MD_GUIDE)
 
 STAGE_LABELS = {"spec":"在写规格","implement":"在写代码","review":"在自审","test":"在跑测试","done":"做完了","stuck":"卡住了"}
 PROMPTS = {s: Path(__file__).parent.parent/"prompts"/f"0{i+1}_{s}.md" for i,s in enumerate(["spec","implement","review","test"])}

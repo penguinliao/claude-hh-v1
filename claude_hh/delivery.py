@@ -73,8 +73,21 @@ def _project_root(root: PathLike) -> Path:
     return value
 
 
+GLOBAL_MEMORY_DIR = Path.home() / ".agent-memory"
+
+
 def _memory_dir(root: Path) -> Path:
-    return root / ".agent-memory"
+    """Resolve cross-agent memory: nearest project-local .agent-memory walking
+    upward from the project root wins; otherwise the global ~/.agent-memory.
+
+    This keeps project-specific overrides possible while making the memory
+    global by default — any agent in any project lands on the same store.
+    """
+    for candidate in (root, *root.parents):
+        memory = candidate / ".agent-memory"
+        if memory.is_dir():
+            return memory
+    return GLOBAL_MEMORY_DIR
 
 
 def _delivery_dir(root: Path) -> Path:
@@ -200,7 +213,11 @@ def init_memory(root: PathLike) -> dict[str, Any]:
     for path, content in defaults.items():
         if not path.exists():
             _atomic_write_text(path, content)
-            created.append(path.relative_to(project).as_posix())
+            try:
+                created.append(path.relative_to(project).as_posix())
+            except ValueError:
+                # memory resolved outside the project (global ~/.agent-memory)
+                created.append(str(path))
     _delivery_dir(project).mkdir(parents=True, exist_ok=True)
     _audit(project, "memory_initialized", {"created": created})
     return {"root": str(memory.resolve()), "created": created}

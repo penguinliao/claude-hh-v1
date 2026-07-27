@@ -97,6 +97,7 @@ def test_nested_internal_symlinks_cannot_read_or_write_outside() -> None:
 
         receipt_project = base / "receipt-project"
         receipt_project.mkdir()
+        (receipt_project / ".agent-memory").mkdir()  # keep store project-local
         delivery.create_contract(receipt_project, "安全边界", ["只写项目内"])
         outside_receipts = base / "outside-receipts"
         outside_receipts.mkdir()
